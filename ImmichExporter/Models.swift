@@ -7,6 +7,22 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 }
 
+enum ExportSourceMode: String, CaseIterable, Identifiable, Sendable {
+    case fileSystem
+    case immichAPI
+
+    var id: String { rawValue }
+
+    func title(for language: AppLanguage) -> String {
+        switch (self, language) {
+        case (.fileSystem, .traditionalChinese): return "NAS 直接讀取"
+        case (.fileSystem, .english): return "Read from NAS"
+        case (.immichAPI, .traditionalChinese): return "Immich API 下載"
+        case (.immichAPI, .english): return "Download through Immich API"
+        }
+    }
+}
+
 enum ExportLayout: String, CaseIterable, Identifiable, Sendable {
     case flat = "全部放在同一個資料夾"
     case year = "依年份分類"
@@ -71,10 +87,33 @@ struct ImmichUserSource: Identifiable, Hashable, Sendable {
     }
 }
 
-struct ImmichAPIUser: Decodable, Sendable {
+struct ImmichAPIUser: Decodable, Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     let email: String
+
+    var displayName: String {
+        if !name.isEmpty { return "\(name) — \(email) — \(id)" }
+        if !email.isEmpty { return "\(email) — \(id)" }
+        return id
+    }
+}
+
+struct ImmichDownloadArchive: Decodable, Sendable {
+    let assetIds: [String]
+    let size: Int64
+}
+
+struct ImmichDownloadInfo: Decodable, Sendable {
+    let archives: [ImmichDownloadArchive]
+    let totalSize: Int64
+
+    var assetCount: Int { archives.reduce(0) { $0 + $1.assetIds.count } }
+}
+
+struct ImmichUserDownloadPlan: Sendable {
+    let user: ImmichAPIUser
+    let info: ImmichDownloadInfo
 }
 
 struct ScanSummary: Sendable {
@@ -98,6 +137,9 @@ struct ExportProgress {
     var totalBytes: Int64 = 0
 
     var fraction: Double {
+        if totalBytes > 0 {
+            return min(1, Double(copiedBytes) / Double(totalBytes))
+        }
         guard total > 0 else { return 0 }
         return Double(completed) / Double(total)
     }
@@ -109,6 +151,7 @@ enum ExporterError: LocalizedError {
     case destinationInsideSource
     case noMediaFound
     case archiveFailed
+    case apiConfigurationMissing
 
     var errorDescription: String? {
         switch self {
@@ -117,6 +160,7 @@ enum ExporterError: LocalizedError {
         case .destinationInsideSource: return "匯出目的地不能放在來源資料夾裡面。"
         case .noMediaFound: return "來源資料夾中找不到可匯出的照片或影片。"
         case .archiveFailed: return "建立 ZIP 壓縮檔失敗。"
+        case .apiConfigurationMissing: return "請輸入 Immich 網址、API key 並選擇使用者。"
         }
     }
 
@@ -128,6 +172,7 @@ enum ExporterError: LocalizedError {
         case .destinationInsideSource: return "The export destination cannot be inside the source folder."
         case .noMediaFound: return "No exportable photos or videos were found in the source folder."
         case .archiveFailed: return "Failed to create the ZIP archive."
+        case .apiConfigurationMissing: return "Enter the Immich URL and API key, then select a user."
         }
     }
 }

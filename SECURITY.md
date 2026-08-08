@@ -8,10 +8,10 @@ Please report security issues privately through GitHub's **Security advisories**
 
 - Download builds only from a release published by the repository owner, or build the source yourself.
 - Grant the app access only to the Immich storage and export folders it needs.
-- For optional user-name lookup, use HTTPS and a dedicated API key limited to `user.read`.
+- Use HTTPS and a dedicated API key with only the access needed for your Immich version and account role.
 - Never include API keys, certificates, NAS credentials, exported media, or Xcode signing profiles in bug reports or commits.
 - Review unexpected hidden staging folders before deleting them after an interrupted ZIP export.
 
 ## Scope
 
-The app reads user-selected filesystem locations, connects to an optional user-provided Immich endpoint, and invokes the built-in macOS `/usr/bin/ditto` utility to create ZIP archives. Reports involving these boundaries are in scope when they are caused by this project's code.
+The app reads user-selected filesystem locations, connects to an optional user-provided Immich endpoint, downloads selected-user archives in API mode, and invokes the built-in macOS `/usr/bin/ditto` utility to create or extract ZIP archives. Reports involving these boundaries are in scope when they are caused by this project's code.

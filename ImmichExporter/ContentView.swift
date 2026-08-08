@@ -11,7 +11,9 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     header
                     sourceSection
-                    userLookupSection
+                    if manager.sourceMode == .fileSystem {
+                        userLookupSection
+                    }
                     summarySection
                     optionsSection
                     destinationSection
@@ -43,7 +45,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(tr("Immich 使用者媒體匯出工具", "Immich User Media Exporter"))
                     .font(.largeTitle.bold())
-                Text(tr("選擇 NAS 上的 Immich 根目錄，工具會自動找出使用者 UUID；選擇使用者後即可掃描並匯出原始照片與影片。", "Select the Immich root folder on your NAS. The app finds user UUIDs automatically, then scans and exports the selected user's original media."))
+                Text(tr("可直接讀取 NAS 上的 Immich 資料，也可透過 Immich API 選擇使用者並下載原始媒體。", "Read Immich storage directly from a NAS, or select a user and download original media through the Immich API."))
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -63,36 +65,81 @@ struct ContentView: View {
     private var sourceSection: some View {
         GroupBox(tr("1. Immich 來源", "1. Immich Source")) {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 12) {
-                    pathField(manager.immichRootURL, placeholder: tr("尚未選擇，例如 …/docker/immich", "Not selected, e.g. …/docker/immich"))
-                    Button(tr("選擇 Immich 目錄…", "Choose Immich Folder…")) { chooseSource() }
-                        .disabled(manager.isExporting || manager.isDiscoveringUsers)
+                Picker(tr("來源方式", "Source Mode"), selection: Binding(
+                    get: { manager.sourceMode },
+                    set: { manager.setSourceMode($0) }
+                )) {
+                    ForEach(ExportSourceMode.allCases) { mode in
+                        Text(mode.title(for: manager.language)).tag(mode)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .disabled(manager.isScanning || manager.isExporting)
 
-                HStack(spacing: 12) {
-                    Picker(tr("使用者 UUID", "User UUID"), selection: Binding(
-                        get: { manager.selectedUserID },
-                        set: { manager.selectUser($0) }
-                    )) {
-                        Text(manager.isDiscoveringUsers ? tr("正在搜尋…", "Searching…") : tr("請選擇使用者", "Select a user"))
-                            .tag(String?.none)
-                        ForEach(manager.availableUsers) { user in
-                            Text(user.displayName)
-                                .tag(Optional(user.id))
+                if manager.sourceMode == .fileSystem {
+                    HStack(spacing: 12) {
+                        pathField(manager.immichRootURL, placeholder: tr("尚未選擇，例如 …/docker/immich", "Not selected, e.g. …/docker/immich"))
+                        Button(tr("選擇 Immich 目錄…", "Choose Immich Folder…")) { chooseSource() }
+                            .disabled(manager.isExporting || manager.isDiscoveringUsers)
+                    }
+
+                    HStack(spacing: 12) {
+                        Picker(tr("使用者 UUID", "User UUID"), selection: Binding(
+                            get: { manager.selectedUserID },
+                            set: { manager.selectUser($0) }
+                        )) {
+                            Text(manager.isDiscoveringUsers ? tr("正在搜尋…", "Searching…") : tr("請選擇使用者", "Select a user"))
+                                .tag(String?.none)
+                            ForEach(manager.availableUsers) { user in
+                                Text(user.displayName).tag(Optional(user.id))
+                            }
+                        }
+                        .disabled(manager.availableUsers.isEmpty || manager.isScanning || manager.isExporting)
+
+                        if manager.isDiscoveringUsers { ProgressView().controlSize(.small) }
+                        if !manager.isScanning {
+                            Button(tr("重新掃描", "Scan Again")) { manager.scan() }
+                                .disabled(manager.sourceURL == nil || manager.isExporting)
                         }
                     }
-                    .disabled(manager.availableUsers.isEmpty || manager.isScanning || manager.isExporting)
+                } else {
+                    HStack(spacing: 10) {
+                        TextField(tr("Immich 網址，例如 http://nas:2283", "Immich URL, e.g. http://nas:2283"), text: $manager.immichServerURL)
+                        SecureField("API key", text: $manager.immichAPIKey)
+                        if manager.isLoadingUserNames {
+                            Button(tr("停止", "Stop"), role: .destructive) { manager.cancelLoadingUsers() }
+                        } else {
+                            Button(tr("載入使用者", "Load Users")) { manager.loadUserNames() }
+                                .disabled(manager.isExporting)
+                        }
+                        if manager.isLoadingUserNames { ProgressView().controlSize(.small) }
+                    }
+                    .textFieldStyle(.roundedBorder)
 
-                    if manager.isDiscoveringUsers {
-                        ProgressView().controlSize(.small)
+                    HStack(spacing: 12) {
+                        Picker(tr("Immich 使用者", "Immich User"), selection: Binding(
+                            get: { manager.selectedAPIUserID },
+                            set: { manager.selectAPIUser($0) }
+                        )) {
+                            Text(tr("請選擇使用者", "Select a user")).tag(String?.none)
+                            Text(tr("全部使用者", "All Users"))
+                                .tag(Optional(ExportManager.allAPIUsersID))
+                            ForEach(manager.apiUsers) { user in
+                                Text(user.displayName).tag(Optional(user.id))
+                            }
+                        }
+                        .disabled(manager.apiUsers.isEmpty || manager.isScanning || manager.isExporting)
+
+                        if !manager.isScanning {
+                            Button(tr("重新取得清單", "Refresh List")) { manager.prepareAPIExport() }
+                                .disabled(manager.selectedAPIUserID == nil || manager.isExporting)
+                        }
                     }
 
-                    if !manager.isScanning {
-                        Button(tr("重新掃描", "Scan Again")) { manager.scan() }
-                            .disabled(manager.sourceURL == nil || manager.isExporting)
-                    }
+                    Text(tr("API key 僅保留在記憶體中。可用範圍取決於 Immich 的帳號角色與伺服器設定。", "The API key is kept in memory only. Available access depends on the Immich account role and server settings."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-
             }
             .padding(.vertical, 6)
         }
@@ -104,9 +151,13 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
                         TextField(tr("Immich 網址，例如 http://nas:2283", "Immich URL, e.g. http://nas:2283"), text: $manager.immichServerURL)
-                        SecureField(tr("API key（需 user.read）", "API key (requires user.read)"), text: $manager.immichAPIKey)
-                        Button(tr("載入名稱", "Load Names")) { manager.loadUserNames() }
-                            .disabled(manager.availableUsers.isEmpty || manager.isLoadingUserNames)
+                        SecureField("API key", text: $manager.immichAPIKey)
+                        if manager.isLoadingUserNames {
+                            Button(tr("停止", "Stop"), role: .destructive) { manager.cancelLoadingUsers() }
+                        } else {
+                            Button(tr("載入名稱", "Load Names")) { manager.loadUserNames() }
+                                .disabled(manager.availableUsers.isEmpty)
+                        }
                         if manager.isLoadingUserNames {
                             ProgressView().controlSize(.small)
                         }
@@ -130,8 +181,10 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 26) {
                     metric(tr("全部檔案", "All Files"), manager.summary.fileCount.formatted())
-                    metric(tr("照片", "Photos"), manager.summary.imageCount.formatted())
-                    metric(tr("影片", "Videos"), manager.summary.videoCount.formatted())
+                    if manager.sourceMode == .fileSystem {
+                        metric(tr("照片", "Photos"), manager.summary.imageCount.formatted())
+                        metric(tr("影片", "Videos"), manager.summary.videoCount.formatted())
+                    }
                     metric(tr("容量", "Size"), ByteCountFormatter.string(fromByteCount: manager.summary.totalBytes, countStyle: .file))
                     if manager.includeSidecars {
                         metric("XMP", manager.summary.sidecarCount.formatted())
@@ -143,7 +196,9 @@ struct ContentView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         ProgressView()
                             .controlSize(.small)
-                        Text(tr("已掃描 \(manager.scanProgress.examinedCount.formatted()) 個項目，找到 \(manager.summary.fileCount.formatted()) 個可匯出檔案", "Scanned \(manager.scanProgress.examinedCount.formatted()) items and found \(manager.summary.fileCount.formatted()) exportable files"))
+                        Text(manager.sourceMode == .fileSystem
+                            ? tr("已掃描 \(manager.scanProgress.examinedCount.formatted()) 個項目，找到 \(manager.summary.fileCount.formatted()) 個可匯出檔案", "Scanned \(manager.scanProgress.examinedCount.formatted()) items and found \(manager.summary.fileCount.formatted()) exportable files")
+                            : tr("正在向 Immich 取得所選使用者的檔案清單…", "Requesting the selected user's file list from Immich…"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Text(manager.scanProgress.currentPath.isEmpty ? tr("正在讀取來源資料夾…", "Reading source folder…") : manager.scanProgress.currentPath)
@@ -168,24 +223,31 @@ struct ContentView: View {
                 }
                 .pickerStyle(.menu)
                 .disabled(manager.isExporting)
-
-                Picker(tr("資料夾結構", "Folder Structure"), selection: $manager.layout) {
-                    ForEach(ExportLayout.allCases) { item in
-                        Text(item.title(for: manager.language)).tag(item)
+                .onChange(of: manager.exportOutput) { _, _ in
+                    if manager.sourceMode == .immichAPI, manager.selectedAPIUserID != nil {
+                        manager.prepareAPIExport()
                     }
                 }
-                .pickerStyle(.radioGroup)
-                .disabled(manager.isExporting)
 
-                Toggle(tr("同時匯出 XMP 中繼資料檔", "Also export XMP metadata files"), isOn: $manager.includeSidecars)
-                    .disabled(manager.isExporting)
-                    .onChange(of: manager.includeSidecars) { _, _ in
-                        if manager.sourceURL != nil { manager.scan() }
+                if manager.sourceMode == .fileSystem {
+                    Picker(tr("資料夾結構", "Folder Structure"), selection: $manager.layout) {
+                        ForEach(ExportLayout.allCases) { item in
+                            Text(item.title(for: manager.language)).tag(item)
+                        }
                     }
+                    .pickerStyle(.radioGroup)
+                    .disabled(manager.isExporting)
 
-                Text(tr("檔名重複時會自動改成「檔名 (2)」，不會覆蓋任何檔案。", "Duplicate names are changed to “filename (2)” automatically. Existing files are never overwritten."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    Toggle(tr("同時匯出 XMP 中繼資料檔", "Also export XMP metadata files"), isOn: $manager.includeSidecars)
+                        .disabled(manager.isExporting)
+                        .onChange(of: manager.includeSidecars) { _, _ in
+                            if manager.sourceURL != nil { manager.scan() }
+                        }
+
+                    Text(tr("檔名重複時會自動改成「檔名 (2)」，不會覆蓋任何檔案。", "Duplicate names are changed to “filename (2)” automatically. Existing files are never overwritten."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
                 if manager.exportOutput.archiveLimitBytes != nil {
                     Text(tr("ZIP 會依未壓縮檔案大小分包；實際壓縮檔大小可能略有不同。單一檔案超過上限時會獨立成包。", "ZIP parts are grouped by uncompressed file size, so final archive sizes may vary slightly. A file larger than the limit is placed in its own archive."))
@@ -252,7 +314,7 @@ struct ContentView: View {
             } else {
                 Button(tr("開始匯出", "Start Export")) { manager.startExport() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(manager.sourceURL == nil || manager.destinationURL == nil || manager.summary.fileCount == 0 || manager.isScanning)
+                    .disabled((manager.sourceMode == .fileSystem ? manager.sourceURL == nil : manager.selectedAPIUserID == nil) || manager.destinationURL == nil || manager.summary.fileCount == 0 || manager.isScanning)
             }
         }
     }
