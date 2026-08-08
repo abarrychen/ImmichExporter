@@ -1,5 +1,9 @@
 # Immich Exporter for macOS
 
+<p align="center">
+  <img src="docs/images/immich-exporter-logo.png" width="180" alt="Immich Exporter logo">
+</p>
+
 Immich Exporter is a native macOS utility for exporting original photos and videos from a selected Immich user—or every accessible user. It can read a mounted Immich storage directory directly or download media through the Immich API.
 
 > Independent community software. This project is not affiliated with or endorsed by Immich.

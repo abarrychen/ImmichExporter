@@ -2,6 +2,12 @@
 
 All notable changes to Immich Exporter are documented here.
 
+## Unreleased
+
+### Added
+
+- Original Immich Exporter application icon and project logo
+
 ## [1.1.0] - 2026-08-08
 
 ### Added
