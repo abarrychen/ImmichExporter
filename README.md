@@ -6,6 +6,10 @@ Immich Exporter reads the storage filesystem directly. It automatically discover
 
 > This is an independent community project and is not affiliated with or endorsed by Immich.
 
+## Screenshot
+
+![Immich Exporter main window](docs/images/immich-exporter-main.png)
+
 ## Features
 
 - Automatically discovers user UUIDs under common Immich `library` and `upload` layouts
