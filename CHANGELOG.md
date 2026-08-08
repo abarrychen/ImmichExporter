@@ -2,7 +2,7 @@
 
 All notable changes to Immich Exporter are documented here.
 
-## Unreleased
+## [1.1.1] - 2026-08-08
 
 ### Added
 

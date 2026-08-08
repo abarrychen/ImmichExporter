@@ -108,7 +108,7 @@ The project uses SwiftUI, Foundation, AppKit, URLSession, and the built-in `/usr
 
 ## Version history
 
-See [CHANGELOG.md](CHANGELOG.md). The current release is **1.1.0**.
+See [CHANGELOG.md](CHANGELOG.md). The current release is **1.1.1**.
 
 ## License
 
