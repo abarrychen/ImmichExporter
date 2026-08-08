@@ -154,16 +154,16 @@ final class ExportManager: ObservableObject {
         summary = ScanSummary()
         scanProgress = ScanProgress()
 
-        scanTask = Task.detached(priority: .userInitiated) { [weak self, includeSidecars, imageExtensions, videoExtensions] in
+        scanTask = Task.detached(priority: .userInitiated) { [self, includeSidecars, imageExtensions, videoExtensions] in
             do {
                 let result = try Self.scanFiles(
                     at: sourceURL,
                     includeSidecars: includeSidecars,
                     imageExtensions: imageExtensions,
                     videoExtensions: videoExtensions
-                ) { [weak self] progressSummary, progress in
-                    Task { @MainActor in
-                        guard let self, self.scanID == currentScanID, self.isScanning else { return }
+                ) { [self] progressSummary, progress in
+                    Task { @MainActor [self] in
+                        guard self.scanID == currentScanID, self.isScanning else { return }
                         self.summary = progressSummary
                         self.scanProgress = progress
                         self.statusMessage = self.text("正在掃描：已掃描 \(progress.examinedCount.formatted()) 個項目，找到 \(progressSummary.fileCount.formatted()) 個檔案。", "Scanning: checked \(progress.examinedCount.formatted()) items and found \(progressSummary.fileCount.formatted()) files.")
@@ -171,7 +171,7 @@ final class ExportManager: ObservableObject {
                 }
 
                 await MainActor.run {
-                    guard let self, self.scanID == currentScanID else { return }
+                    guard self.scanID == currentScanID else { return }
                     self.scannedFiles = result.files
                     self.summary = result.summary
                     self.scanProgress = result.progress
@@ -182,13 +182,13 @@ final class ExportManager: ObservableObject {
                 }
             } catch is CancellationError {
                 await MainActor.run {
-                    guard let self, self.scanID == currentScanID else { return }
+                    guard self.scanID == currentScanID else { return }
                     self.isScanning = false
                     self.statusMessage = self.text("掃描已停止。", "Scan stopped.")
                 }
             } catch {
                 await MainActor.run {
-                    guard let self, self.scanID == currentScanID else { return }
+                    guard self.scanID == currentScanID else { return }
                     self.isScanning = false
                     self.errorMessage = error.localizedDescription
                     self.statusMessage = self.text("掃描失敗。", "Scan failed.")
@@ -243,11 +243,11 @@ final class ExportManager: ObservableObject {
         let folderExportRoot = destinationURL.appendingPathComponent(exportName, isDirectory: true)
         let stagingRoot = destinationURL.appendingPathComponent(".\(exportName)-staging-\(UUID().uuidString)", isDirectory: true)
 
-        exportTask = Task.detached(priority: .userInitiated) { [weak self] in
+        exportTask = Task.detached(priority: .userInitiated) { [self] in
             var revealURL: URL?
             var archiveCount = 0
             var currentPartBytes: Int64 = 0
-            var currentPartRoot = stagingRoot.appendingPathComponent("part", isDirectory: true)
+            let currentPartRoot = stagingRoot.appendingPathComponent("part", isDirectory: true)
 
             defer {
                 if selectedOutput.archiveLimitBytes != nil {
@@ -272,12 +272,13 @@ final class ExportManager: ObservableObject {
                        currentPartBytes > 0,
                        currentPartBytes + fileSize > archiveLimit {
                         archiveCount += 1
+                        let partNumber = archiveCount
                         let archiveURL = Self.nonConflictingURL(
                             in: destinationURL,
-                            preferredName: String(format: "%@ Part %03d.zip", exportName, archiveCount)
+                            preferredName: String(format: "%@ Part %03d.zip", exportName, partNumber)
                         )
                         await MainActor.run {
-                            self?.progress.currentFile = self?.text("正在壓縮第 \(archiveCount) 包…", "Compressing part \(archiveCount)…") ?? ""
+                            self.progress.currentFile = self.text("正在壓縮第 \(partNumber) 包…", "Compressing part \(partNumber)…")
                         }
                         try Self.createZipArchive(from: currentPartRoot, at: archiveURL)
                         try Task.checkCancellation()
@@ -288,7 +289,7 @@ final class ExportManager: ObservableObject {
                     }
 
                     await MainActor.run {
-                        self?.progress.currentFile = fileURL.lastPathComponent
+                        self.progress.currentFile = fileURL.lastPathComponent
                     }
                     let activeExportRoot = selectedOutput.archiveLimitBytes == nil ? folderExportRoot : currentPartRoot
                     let targetDirectory = try Self.targetDirectory(
@@ -303,43 +304,47 @@ final class ExportManager: ObservableObject {
                     try FileManager.default.copyItem(at: fileURL, to: targetURL)
 
                     await MainActor.run {
-                        self?.progress.completed = index + 1
-                        self?.progress.copiedBytes += fileSize
+                        self.progress.completed = index + 1
+                        self.progress.copiedBytes += fileSize
                     }
                     currentPartBytes += fileSize
                 }
 
                 if selectedOutput.archiveLimitBytes != nil, currentPartBytes > 0 {
                     archiveCount += 1
+                    let partNumber = archiveCount
                     let archiveURL = Self.nonConflictingURL(
                         in: destinationURL,
-                        preferredName: String(format: "%@ Part %03d.zip", exportName, archiveCount)
+                        preferredName: String(format: "%@ Part %03d.zip", exportName, partNumber)
                     )
                     await MainActor.run {
-                        self?.progress.currentFile = self?.text("正在壓縮第 \(archiveCount) 包…", "Compressing part \(archiveCount)…") ?? ""
+                        self.progress.currentFile = self.text("正在壓縮第 \(partNumber) 包…", "Compressing part \(partNumber)…")
                     }
                     try Self.createZipArchive(from: currentPartRoot, at: archiveURL)
                     try Task.checkCancellation()
                     if revealURL == nil { revealURL = archiveURL }
                 }
 
+                let finalRevealURL = revealURL
+                let finalArchiveCount = archiveCount
                 await MainActor.run {
-                    self?.isExporting = false
-                    self?.exportedFolderURL = revealURL
-                    self?.statusMessage = archiveCount > 0
-                        ? self?.text("匯出完成：\(files.count.formatted()) 個檔案，共 \(archiveCount) 個 ZIP。", "Export complete: \(files.count.formatted()) files in \(archiveCount) ZIP archives.") ?? ""
-                        : self?.text("匯出完成：\(files.count.formatted()) 個檔案。", "Export complete: \(files.count.formatted()) files.") ?? ""
+                    self.isExporting = false
+                    self.exportedFolderURL = finalRevealURL
+                    self.statusMessage = finalArchiveCount > 0
+                        ? self.text("匯出完成：\(files.count.formatted()) 個檔案，共 \(finalArchiveCount) 個 ZIP。", "Export complete: \(files.count.formatted()) files in \(finalArchiveCount) ZIP archives.")
+                        : self.text("匯出完成：\(files.count.formatted()) 個檔案。", "Export complete: \(files.count.formatted()) files.")
                 }
             } catch is CancellationError {
                 await MainActor.run {
-                    self?.isExporting = false
-                    self?.statusMessage = self?.text("匯出已取消，已完成的檔案會保留。", "Export cancelled. Completed files have been kept.") ?? ""
+                    self.isExporting = false
+                    self.statusMessage = self.text("匯出已取消，已完成的檔案會保留。", "Export cancelled. Completed files have been kept.")
                 }
             } catch {
+                let exportErrorMessage = error.localizedDescription
                 await MainActor.run {
-                    self?.isExporting = false
-                    self?.errorMessage = error.localizedDescription
-                    self?.statusMessage = self?.text("匯出失敗。", "Export failed.") ?? ""
+                    self.isExporting = false
+                    self.errorMessage = exportErrorMessage
+                    self.statusMessage = self.text("匯出失敗。", "Export failed.")
                 }
             }
         }
